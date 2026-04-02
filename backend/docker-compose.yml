@@ -1,0 +1,39 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: genpay_db
+    environment:
+      POSTGRES_USER: genpay
+      POSTGRES_PASSWORD: genpay_password
+      POSTGRES_DB: genpay_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - genpay_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U genpay -d genpay_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: genpay_api
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://genpay:genpay_password@db:5432/genpay_db"
+      DATABASE_URL_SYNC: "postgresql://genpay:genpay_password@db:5432/genpay_db"
+      SECRET_KEY: "change-this-in-production-to-a-real-secret"
+      DEBUG: "true"
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  genpay_pgdata:
