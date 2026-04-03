@@ -1,17 +1,27 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+import logging
+from .auth.middleware import get_current_user
 from .core.config import get_settings
 from .core.database import init_db
-from .routers import auth_router, transactions_router, travel_router, services_router, agent_router
+from .core.seed import seed_reference_data
+from .routers import auth_router, transactions_router, travel_router, services_router, bank_router
+from .routes import agent_router
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: create tables
-    await init_db()
+    try:
+        await init_db()
+        await seed_reference_data()
+    except Exception as exc:
+        # Keep agent endpoints available for prototype/demo mode without DB.
+        logger.warning("Database init failed; continuing in degraded mode: %s", exc)
     yield
     # Shutdown
 
@@ -50,10 +60,11 @@ app.add_middleware(
 
 # Register routers
 app.include_router(auth_router)
-app.include_router(transactions_router)
-app.include_router(travel_router)
-app.include_router(services_router)
-app.include_router(agent_router)
+app.include_router(transactions_router, prefix="/api", dependencies=[Depends(get_current_user)])
+app.include_router(travel_router, prefix="/api", dependencies=[Depends(get_current_user)])
+app.include_router(services_router, prefix="/api", dependencies=[Depends(get_current_user)])
+app.include_router(bank_router, prefix="/api", dependencies=[Depends(get_current_user)])
+app.include_router(agent_router, prefix="/api", dependencies=[Depends(get_current_user)])
 
 
 @app.get("/", tags=["Health"])

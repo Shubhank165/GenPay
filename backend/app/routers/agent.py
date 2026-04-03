@@ -10,7 +10,7 @@ Architecture:
 Currently a placeholder that demonstrates the API contract.
 """
 from fastapi import APIRouter, Depends
-from ..core.security import get_current_user
+from ..auth.middleware import get_current_user
 from ..schemas import AgentQueryRequest, AgentQueryResponse
 
 router = APIRouter(prefix="/agent", tags=["Agent (NLP Layer)"])

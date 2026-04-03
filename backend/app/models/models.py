@@ -110,7 +110,7 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     upi_id = Column(String(100), unique=True, nullable=True)
     kyc_status = Column(Enum(KYCStatus), default=KYCStatus.NOT_STARTED)
-    wallet_balance = Column(Float, default=0.0)
+    wallet_balance = Column(Float, default=19748.45)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), default=utc_now)
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)

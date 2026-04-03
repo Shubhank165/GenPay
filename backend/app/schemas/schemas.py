@@ -7,7 +7,7 @@ from enum import Enum
 
 # ─── AUTH ───
 class PhoneLoginRequest(BaseModel):
-    phone: str = Field(..., pattern=r"^[6-9]\d{9}$", description="Indian 10-digit mobile")
+    phone: str = Field(..., pattern=r"^\+91[6-9]\d{9}$", description="Indian E.164 mobile")
 
 class OTPVerifyRequest(BaseModel):
     phone: str
@@ -16,7 +16,7 @@ class OTPVerifyRequest(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
-    user_id: str
+    user_id: Optional[str] = None
 
 class UserResponse(BaseModel):
     id: str
@@ -38,6 +38,7 @@ class TransactionCreate(BaseModel):
     recipient_name: Optional[str] = None
     recipient_identifier: Optional[str] = None
     description: Optional[str] = None
+    upi_pin: Optional[str] = Field(None, min_length=6, max_length=6)
 
 class TransactionResponse(BaseModel):
     id: str
