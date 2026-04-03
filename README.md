@@ -139,7 +139,3 @@ flutter run -d android
 ## Contributing
 
 Contributions are welcome. Open an issue for feature requests or bug reports, and use focused pull requests with clear descriptions.
-
-## License
-
-No license file is currently included. Add a `LICENSE` file to define usage and distribution terms.
