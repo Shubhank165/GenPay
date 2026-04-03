@@ -16,6 +16,7 @@ class EnterAmountScreen extends StatefulWidget {
 class _EnterAmountScreenState extends State<EnterAmountScreen> {
   final _amountController = TextEditingController();
   final _noteController = TextEditingController();
+  static const String _upiPin = '165165';
 
   @override
   void dispose() {
@@ -44,9 +45,20 @@ class _EnterAmountScreenState extends State<EnterAmountScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => PinInput(
+        pinLength: 6,
         onCompleted: (pin) async {
           Navigator.pop(ctx);
-          await upi.processPayment();
+          if (pin != _upiPin) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Invalid UPI PIN'),
+                backgroundColor: AppColors.errorRed,
+              ),
+            );
+            return;
+          }
+          await upi.processPayment(pin);
           if (mounted) {
             Navigator.pushReplacementNamed(context, AppRoutes.paymentStatus);
           }

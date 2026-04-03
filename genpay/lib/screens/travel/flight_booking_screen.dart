@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../config/constants.dart';
-import '../../services/mock_data_service.dart';
+import '../../services/api_service.dart';
 
 class FlightBookingScreen extends StatefulWidget {
   const FlightBookingScreen({super.key});
@@ -8,23 +8,36 @@ class FlightBookingScreen extends StatefulWidget {
 }
 
 class _FlightBookingScreenState extends State<FlightBookingScreen> {
-  String _from = 'Delhi (DEL)';
-  String _to = 'Goa (GOI)';
+  String _from = 'Delhi';
+  String _to = 'Mumbai';
   DateTime _date = DateTime.now().add(const Duration(days: 7));
   int _passengers = 1;
   bool _searched = false;
   bool _isSearching = false;
+  List<Map<String, dynamic>> _flights = [];
 
   void _search() async {
     setState(() => _isSearching = true);
-    await Future.delayed(const Duration(milliseconds: 1500));
-    setState(() { _isSearching = false; _searched = true; });
+    try {
+      final result = await ApiService.searchFlights(
+        origin: _from,
+        destination: _to,
+        date: '${_date.year}-${_date.month.toString().padLeft(2, '0')}-${_date.day.toString().padLeft(2, '0')}',
+        cabinClass: 'economy',
+        passengers: _passengers,
+      );
+      _flights = result.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    } catch (_) {
+      _flights = [];
+    }
+    setState(() {
+      _isSearching = false;
+      _searched = true;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final flights = MockDataService.getMockFlights();
-
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(title: const Text('Flight Booking'), backgroundColor: AppColors.darkBlue, foregroundColor: Colors.white),
@@ -81,32 +94,45 @@ class _FlightBookingScreenState extends State<FlightBookingScreen> {
           if (_searched) ...[
             Padding(padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                Text('${flights.length} flights found', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                Text('${_flights.length} flights found', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
                 TextButton.icon(onPressed: () {}, icon: const Icon(Icons.filter_list, size: 18), label: const Text('Filter')),
               ])),
-            ...flights.map((f) => Container(
+            ..._flights.map((f) => Container(
               margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16),
                 boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10)]),
               child: Column(children: [
                 Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                  Text(f['airline'] as String, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-                  Text(f['code'] as String, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                  Text((f['airline'] ?? '').toString(), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                  Text((f['flight_code'] ?? '').toString(), style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                 ]),
                 const SizedBox(height: 12),
                 Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                  Column(children: [Text(f['departure'] as String, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)), Text(_from.split(' ')[0], style: const TextStyle(fontSize: 12, color: AppColors.textSecondary))]),
                   Column(children: [
-                    Text(f['duration'] as String, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-                    Container(width: 80, height: 1, color: AppColors.divider, margin: const EdgeInsets.symmetric(vertical: 4)),
-                    Text(f['stops'] as String, style: TextStyle(fontSize: 11, color: (f['stops'] as String) == 'Non-stop' ? AppColors.successGreen : AppColors.textSecondary, fontWeight: FontWeight.w500)),
+                    Text(_formatTime((f['departure_time'] ?? '').toString()), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+                    Text((f['origin_city'] ?? _from).toString(), style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                   ]),
-                  Column(children: [Text(f['arrival'] as String, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)), Text(_to.split(' ')[0], style: const TextStyle(fontSize: 12, color: AppColors.textSecondary))]),
+                  Column(children: [
+                    Text('${f['duration_minutes']}m', style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                    Container(width: 80, height: 1, color: AppColors.divider, margin: const EdgeInsets.symmetric(vertical: 4)),
+                    Text(
+                      ((f['stops'] ?? 0) as int) == 0 ? 'Non-stop' : '${f['stops']} stop',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: ((f['stops'] ?? 0) as int) == 0 ? AppColors.successGreen : AppColors.textSecondary,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ]),
+                  Column(children: [
+                    Text(_formatTime((f['arrival_time'] ?? '').toString()), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+                    Text((f['destination_city'] ?? _to).toString(), style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                  ]),
                 ]),
                 const Divider(height: 24),
                 Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                  Text('₹${f['price']}', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: AppColors.primaryBlue)),
+                  Text('Rs ${f['price']}', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: AppColors.primaryBlue)),
                   ElevatedButton(onPressed: () {
                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Booking simulated!'), backgroundColor: AppColors.successGreen));
                   }, style: ElevatedButton.styleFrom(backgroundColor: AppColors.orangeCTA, padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
@@ -132,5 +158,17 @@ class _FlightBookingScreenState extends State<FlightBookingScreen> {
         Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
       ]),
     );
+  }
+
+  String _formatTime(String raw) {
+    if (raw.isEmpty) return '--:--';
+    try {
+      final dt = DateTime.parse(raw).toLocal();
+      final hh = dt.hour.toString().padLeft(2, '0');
+      final mm = dt.minute.toString().padLeft(2, '0');
+      return '$hh:$mm';
+    } catch (_) {
+      return raw;
+    }
   }
 }

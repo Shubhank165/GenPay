@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../config/constants.dart';
-import '../../services/mock_data_service.dart';
+import '../../models/offer.dart';
+import '../../services/api_service.dart';
 
 class OffersScreen extends StatefulWidget {
   const OffersScreen({super.key});
@@ -10,13 +11,38 @@ class OffersScreen extends StatefulWidget {
 class _OffersScreenState extends State<OffersScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final tabs = ['All', 'UPI', 'Recharge', 'Bills', 'Travel', 'Shopping'];
+  bool _isLoading = true;
+  List<OfferModel> _offers = [];
 
-  @override void initState() { super.initState(); _tabController = TabController(length: tabs.length, vsync: this); }
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: tabs.length, vsync: this);
+    _loadOffers();
+  }
+
+  Future<void> _loadOffers() async {
+    setState(() => _isLoading = true);
+    try {
+      final raw = await ApiService.listOffers();
+      _offers = raw
+          .whereType<Map>()
+          .map((item) => OfferModel.fromBackendJson(Map<String, dynamic>.from(item)))
+          .toList();
+    } catch (_) {
+      _offers = [];
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
   @override void dispose() { _tabController.dispose(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) {
-    final offers = MockDataService.getMockOffers();
+    final offers = _offers;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -25,10 +51,14 @@ class _OffersScreenState extends State<OffersScreen> with SingleTickerProviderSt
         bottom: TabBar(controller: _tabController, isScrollable: true, indicatorColor: Colors.white, indicatorWeight: 3,
           labelColor: Colors.white, unselectedLabelColor: Colors.white60,
           tabs: tabs.map((t) => Tab(text: t)).toList())),
-      body: TabBarView(
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : TabBarView(
         controller: _tabController,
         children: tabs.map((tab) {
-          final filtered = tab == 'All' ? offers : offers.where((o) => o.category == tab).toList();
+          final filtered = tab == 'All'
+              ? offers
+              : offers.where((o) => o.category.toLowerCase() == tab.toLowerCase()).toList();
           if (filtered.isEmpty) {
             return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
               Icon(Icons.local_offer_outlined, size: 64, color: AppColors.textTertiary),

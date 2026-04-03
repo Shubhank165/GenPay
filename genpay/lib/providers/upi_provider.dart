@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'dart:math';
+import '../services/api_service.dart';
+import '../services/local_storage_service.dart';
 
 class UpiProvider extends ChangeNotifier {
   bool _isProcessing = false;
@@ -41,20 +42,38 @@ class UpiProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> processPayment() async {
+  Future<bool> processPayment(String upiPin) async {
     _isProcessing = true;
     notifyListeners();
 
-    // Simulate payment processing
-    await Future.delayed(const Duration(seconds: 2));
+    try {
+      final token = await LocalStorageService.getAuthToken();
+      if (token == null || token.isEmpty) {
+        throw Exception('Not authenticated');
+      }
 
-    // 90% success rate simulation
-    _paymentSuccess = Random().nextInt(10) < 9;
-    _transactionRef = 'TXN${Random().nextInt(999999999).toString().padLeft(12, '0')}';
+      final response = await ApiService.createTransaction(
+        token,
+        type: 'upi_transfer',
+        amount: _amount,
+        upiPin: upiPin,
+        recipientName: _recipientName,
+        recipientIdentifier: _recipientUpiId,
+        description: _note,
+      );
 
-    _isProcessing = false;
-    notifyListeners();
-    return _paymentSuccess;
+      _paymentSuccess = true;
+      _transactionRef = (response['id'] ?? response['reference_id'] ?? '').toString();
+      _isProcessing = false;
+      notifyListeners();
+      return true;
+    } catch (_) {
+      _paymentSuccess = false;
+      _transactionRef = '';
+      _isProcessing = false;
+      notifyListeners();
+      return false;
+    }
   }
 
   void reset() {

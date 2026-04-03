@@ -1,4 +1,35 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+
+class AppConfig {
+  static const String _backendOverride = String.fromEnvironment(
+    'BACKEND_BASE_URL',
+    defaultValue: '',
+  );
+  static const String _guestModeOverride = String.fromEnvironment(
+    'ALLOW_GUEST_MODE',
+    defaultValue: 'false',
+  );
+
+  static bool get guestModeEnabled => _guestModeOverride.toLowerCase() == 'true';
+
+  static String get backendBaseUrl {
+    if (_backendOverride.isNotEmpty) {
+      return _backendOverride;
+    }
+
+    if (kIsWeb) {
+      return 'http://127.0.0.1:8010';
+    }
+
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+        return 'http://10.0.2.2:8010';
+      default:
+        return 'http://127.0.0.1:8010';
+    }
+  }
+}
 
 class AppColors {
   // Primary Paytm Colors

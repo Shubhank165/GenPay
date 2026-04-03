@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/bill.dart';
-import '../services/mock_data_service.dart';
+import '../services/api_service.dart';
+import '../services/local_storage_service.dart';
 
 class BillProvider extends ChangeNotifier {
   List<BillModel> _bills = [];
@@ -19,37 +20,45 @@ class BillProvider extends ChangeNotifier {
   List<BillModel> get overdueBills =>
       _bills.where((b) => b.status == BillStatus.overdue || b.isOverdue).toList();
 
-  void loadBills() {
+  Future<void> loadBills() async {
     _isLoading = true;
     notifyListeners();
 
-    _bills = MockDataService.getMockBills();
-    _isLoading = false;
-    notifyListeners();
+    try {
+      final token = await LocalStorageService.getAuthToken();
+      if (token == null || token.isEmpty) {
+        _bills = [];
+      } else {
+        final raw = await ApiService.listBills(token, unpaidOnly: false);
+        _bills = raw
+            .whereType<Map>()
+            .map((item) => BillModel.fromBackendJson(Map<String, dynamic>.from(item)))
+            .toList();
+      }
+    } catch (_) {
+      _bills = [];
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 
   Future<BillModel?> fetchBill(BillType type, String consumerNumber) async {
     _isFetchingBill = true;
     notifyListeners();
 
-    await Future.delayed(const Duration(milliseconds: 1500));
+    if (_bills.isEmpty) {
+      await loadBills();
+    }
 
-    // Find matching biller or create a mock one
-    final matching = _bills.where((b) =>
-        b.type == type && b.consumerNumber == consumerNumber);
-
+    final matching = _bills.where((b) => b.type == type && b.consumerNumber == consumerNumber);
     if (matching.isNotEmpty) {
       _currentBill = matching.first;
     } else {
-      _currentBill = BillModel(
-        id: 'BILL_NEW',
-        type: type,
-        providerName: 'Provider',
-        consumerNumber: consumerNumber,
-        amount: 1250.00,
-        dueDate: DateTime.now().add(const Duration(days: 15)),
-        status: BillStatus.pending,
-      );
+      _currentBill = _bills.where((b) => b.type == type).cast<BillModel?>().firstWhere(
+            (b) => b != null,
+            orElse: () => null,
+          );
     }
 
     _isFetchingBill = false;
@@ -61,24 +70,26 @@ class BillProvider extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
-    await Future.delayed(const Duration(seconds: 2));
+    try {
+      final token = await LocalStorageService.getAuthToken();
+      if (token == null || token.isEmpty) {
+        throw Exception('No auth token');
+      }
 
-    final index = _bills.indexWhere((b) => b.id == billId);
-    if (index != -1) {
-      _bills[index] = BillModel(
-        id: _bills[index].id,
-        type: _bills[index].type,
-        providerName: _bills[index].providerName,
-        consumerNumber: _bills[index].consumerNumber,
-        amount: _bills[index].amount,
-        dueDate: _bills[index].dueDate,
-        status: BillStatus.paid,
-      );
+      await ApiService.payBill(token, billId);
+
+      final index = _bills.indexWhere((b) => b.id == billId);
+      if (index != -1) {
+        _bills[index] = _bills[index].copyWith(status: BillStatus.paid);
+      }
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    } catch (_) {
+      _isLoading = false;
+      notifyListeners();
+      return false;
     }
-
-    _isLoading = false;
-    notifyListeners();
-    return true;
   }
 
   void clearCurrentBill() {

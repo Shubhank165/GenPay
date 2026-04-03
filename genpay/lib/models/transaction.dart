@@ -123,4 +123,86 @@ class TransactionModel {
       'transactionRef': transactionRef,
     };
   }
+
+  factory TransactionModel.fromBackendJson(Map<String, dynamic> json) {
+    final typeRaw = (json['type'] ?? '').toString();
+    final statusRaw = (json['status'] ?? '').toString();
+
+    TransactionType type;
+    switch (typeRaw) {
+      case 'upi_transfer':
+        type = TransactionType.sent;
+        break;
+      case 'recharge':
+        type = TransactionType.recharge;
+        break;
+      case 'bill_payment':
+        type = TransactionType.billPayment;
+        break;
+      case 'wallet_topup':
+      case 'wallet_withdraw':
+        type = TransactionType.wallet;
+        break;
+      case 'refund':
+        type = TransactionType.refund;
+        break;
+      default:
+        type = TransactionType.sent;
+    }
+
+    TransactionStatus status;
+    switch (statusRaw) {
+      case 'success':
+        status = TransactionStatus.success;
+        break;
+      case 'failed':
+        status = TransactionStatus.failed;
+        break;
+      default:
+        status = TransactionStatus.pending;
+    }
+
+    TransactionCategory category;
+    switch (typeRaw) {
+      case 'recharge':
+        category = TransactionCategory.mobileRecharge;
+        break;
+      case 'bill_payment':
+        category = TransactionCategory.electricity;
+        break;
+      case 'flight_booking':
+        category = TransactionCategory.flight;
+        break;
+      case 'bus_booking':
+        category = TransactionCategory.bus;
+        break;
+      case 'hotel_booking':
+        category = TransactionCategory.hotel;
+        break;
+      case 'wallet_topup':
+        category = TransactionCategory.walletTopup;
+        break;
+      case 'wallet_withdraw':
+        category = TransactionCategory.walletWithdraw;
+        break;
+      default:
+        category = TransactionCategory.upiTransfer;
+    }
+
+    final timestampRaw = json['created_at'] ?? json['timestamp'];
+
+    return TransactionModel(
+      id: (json['id'] ?? '').toString(),
+      type: type,
+      status: status,
+      category: category,
+      amount: ((json['amount'] ?? 0) as num).toDouble(),
+      recipientName: (json['recipient_name'] ?? json['recipientName'] ?? 'Unknown').toString(),
+      recipientUpiId: (json['recipient_identifier'] ?? json['recipientUpiId'] ?? '').toString(),
+      note: (json['description'] ?? json['note'])?.toString(),
+      timestamp: timestampRaw != null ? DateTime.parse(timestampRaw.toString()) : DateTime.now(),
+      bankName: null,
+      transactionRef: (json['reference_id'] ?? json['transactionRef'])?.toString(),
+    );
+  }
 }

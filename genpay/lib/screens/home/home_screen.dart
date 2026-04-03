@@ -7,6 +7,8 @@ import '../../providers/wallet_provider.dart';
 import '../../providers/transaction_provider.dart';
 import '../../providers/bank_provider.dart';
 import '../../providers/bill_provider.dart';
+import '../../services/api_service.dart';
+import '../../services/local_storage_service.dart';
 import '../../widgets/app_bottom_nav.dart';
 import '../../widgets/search_bar.dart';
 import 'widgets/balance_card.dart';
@@ -29,6 +31,14 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _currentNavIndex = 0;
+  final TextEditingController _promptController = TextEditingController();
+  static const String _upiPin = '165165';
+  bool _isPromptLoading = false;
+  bool _needsConfirmation = false;
+  String _promptFeedback = '';
+  String _lastPrompt = '';
+  String? _lastUpiPin;
+  List<Map<String, dynamic>> _promptOptions = [];
 
   @override
   void initState() {
@@ -38,10 +48,141 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  @override
+  void dispose() {
+    _promptController.dispose();
+    super.dispose();
+  }
+
   void _loadData() {
     context.read<TransactionProvider>().loadTransactions();
     context.read<BankProvider>().loadAccounts();
     context.read<BillProvider>().loadBills();
+    context.read<WalletProvider>().loadBalanceFromBackend();
+  }
+
+  Future<void> _submitPrompt({bool userConfirmation = false}) async {
+    final message = userConfirmation ? _lastPrompt : _promptController.text.trim();
+    if (message.isEmpty) {
+      return;
+    }
+
+    String? upiPin;
+    if (_isTransactionPrompt(message)) {
+      if (userConfirmation && _lastUpiPin != null) {
+        upiPin = _lastUpiPin;
+      } else {
+        upiPin = await _askUpiPin();
+        if (upiPin == null) {
+          return;
+        }
+      }
+    }
+
+    setState(() {
+      _isPromptLoading = true;
+      _promptFeedback = '';
+      _promptOptions = [];
+    });
+
+    try {
+      final auth = context.read<AuthProvider>();
+      final storedUserId = await LocalStorageService.getUserId();
+      final userId = auth.currentUser?.id ?? storedUserId ?? '123';
+
+      final response = await ApiService.queryAgent(
+        userId,
+        message,
+        userConfirmation: userConfirmation,
+        upiPin: upiPin,
+      );
+
+      final status = (response['status'] ?? '').toString();
+      final messageText = (response['message'] ?? '').toString();
+      final reason = (response['reason'] ?? '').toString();
+      final options = (response['options'] is List)
+          ? (response['options'] as List)
+              .whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .toList()
+          : <Map<String, dynamic>>[];
+
+      if (status == 'confirmation_required') {
+        setState(() {
+          _needsConfirmation = true;
+          _lastPrompt = message;
+          _lastUpiPin = upiPin;
+          _promptFeedback = messageText;
+          _promptOptions = options;
+        });
+      } else {
+        setState(() {
+          _needsConfirmation = false;
+          _lastUpiPin = null;
+          _promptFeedback = reason.isNotEmpty ? '$messageText ($reason)' : messageText;
+          _promptOptions = options;
+        });
+        _loadData();
+      }
+    } catch (e) {
+      setState(() {
+        _needsConfirmation = false;
+        _lastUpiPin = null;
+        _promptFeedback = 'Prompt execution failed: $e';
+        _promptOptions = [];
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _isPromptLoading = false);
+      }
+    }
+  }
+
+  bool _isTransactionPrompt(String message) {
+    final text = message.toLowerCase();
+    return text.contains('send') ||
+        text.contains('pay') ||
+        text.contains('transfer') ||
+        text.contains('recharge');
+  }
+
+  Future<String?> _askUpiPin() async {
+    final controller = TextEditingController();
+    final pin = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Enter UPI PIN'),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          obscureText: true,
+          maxLength: 6,
+          decoration: const InputDecoration(hintText: '6-digit UPI PIN'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Confirm'),
+          ),
+        ],
+      ),
+    );
+
+    if (pin == null) {
+      return null;
+    }
+    if (pin != _upiPin) {
+      if (!mounted) return null;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Invalid UPI PIN'), backgroundColor: AppColors.errorRed),
+      );
+      return null;
+    }
+    return pin;
   }
 
   Widget _getBody() {
@@ -165,6 +306,172 @@ class _HomeScreenState extends State<HomeScreen> {
                         onTap: () {
                           // TODO: navigate to search
                         },
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.14),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Column(
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextField(
+                                    controller: _promptController,
+                                    style: const TextStyle(color: Colors.white),
+                                    minLines: 1,
+                                    maxLines: 2,
+                                    decoration: InputDecoration(
+                                      hintText: 'Ask GenPay: Pay Rahul 500',
+                                      hintStyle: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 13),
+                                      filled: true,
+                                      fillColor: Colors.white.withOpacity(0.12),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: BorderSide.none,
+                                      ),
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                SizedBox(
+                                  height: 46,
+                                  child: ElevatedButton(
+                                    onPressed: _isPromptLoading ? null : () => _submitPrompt(),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.white,
+                                      foregroundColor: AppColors.darkBlue,
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                    ),
+                                    child: _isPromptLoading
+                                        ? const SizedBox(
+                                            width: 18,
+                                            height: 18,
+                                            child: CircularProgressIndicator(strokeWidth: 2),
+                                          )
+                                        : const Text('Run', style: TextStyle(fontWeight: FontWeight.w700)),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (_needsConfirmation) ...[
+                              const SizedBox(height: 10),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton(
+                                  onPressed: _isPromptLoading ? null : () => _submitPrompt(userConfirmation: true),
+                                  style: OutlinedButton.styleFrom(
+                                    side: const BorderSide(color: Colors.white),
+                                    foregroundColor: Colors.white,
+                                  ),
+                                  child: const Text('Confirm Action'),
+                                ),
+                              ),
+                            ],
+                            if (_promptFeedback.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 8),
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    _promptFeedback,
+                                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                                  ),
+                                ),
+                              ),
+                            if (_promptOptions.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 10),
+                                child: SizedBox(
+                                  height: 132,
+                                  child: ListView.separated(
+                                    scrollDirection: Axis.horizontal,
+                                    itemCount: _promptOptions.length,
+                                    separatorBuilder: (_, __) => const SizedBox(width: 8),
+                                    itemBuilder: (context, index) {
+                                      final option = _promptOptions[index];
+                                      final title = (option['title'] ?? 'Option').toString();
+                                      final subtitle = (option['subtitle'] ?? '').toString();
+                                      final meta = (option['meta'] ?? '').toString();
+                                      final type = (option['type'] ?? '').toString();
+                                      final price = option['price'];
+                                      final priceText = price is num ? 'Rs ${price.toStringAsFixed(0)}' : '';
+
+                                      return Container(
+                                        width: 190,
+                                        padding: const EdgeInsets.all(10),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              title,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                color: AppColors.textPrimary,
+                                                fontWeight: FontWeight.w700,
+                                                fontSize: 13,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              subtitle,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                color: AppColors.textSecondary,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                            const Spacer(),
+                                            if (priceText.isNotEmpty)
+                                              Text(
+                                                priceText,
+                                                style: const TextStyle(
+                                                  color: AppColors.primaryBlue,
+                                                  fontWeight: FontWeight.w700,
+                                                  fontSize: 14,
+                                                ),
+                                              ),
+                                            if (meta.isNotEmpty)
+                                              Text(
+                                                meta,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  color: AppColors.textSecondary,
+                                                  fontSize: 11,
+                                                ),
+                                              ),
+                                            if (type.isNotEmpty)
+                                              Padding(
+                                                padding: const EdgeInsets.only(top: 4),
+                                                child: Text(
+                                                  type.replaceAll('_', ' ').toUpperCase(),
+                                                  style: const TextStyle(
+                                                    color: AppColors.textTertiary,
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                     ],
                   ),

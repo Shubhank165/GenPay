@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../config/constants.dart';
-import '../../services/mock_data_service.dart';
+import '../../services/api_service.dart';
 
 class BusBookingScreen extends StatefulWidget {
   const BusBookingScreen({super.key});
@@ -13,17 +13,29 @@ class _BusBookingScreenState extends State<BusBookingScreen> {
   DateTime _date = DateTime.now().add(const Duration(days: 3));
   bool _searched = false;
   bool _isSearching = false;
+  List<Map<String, dynamic>> _buses = [];
 
   void _search() async {
     setState(() => _isSearching = true);
-    await Future.delayed(const Duration(milliseconds: 1200));
-    setState(() { _isSearching = false; _searched = true; });
+    try {
+      final result = await ApiService.searchBuses(
+        origin: _from,
+        destination: _to,
+        date: '${_date.year}-${_date.month.toString().padLeft(2, '0')}-${_date.day.toString().padLeft(2, '0')}',
+        busType: 'AC_SLEEPER',
+      );
+      _buses = result.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    } catch (_) {
+      _buses = [];
+    }
+    setState(() {
+      _isSearching = false;
+      _searched = true;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final buses = MockDataService.getMockBuses();
-
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(title: const Text('Bus Booking'), backgroundColor: AppColors.darkBlue, foregroundColor: Colors.white),
@@ -64,37 +76,37 @@ class _BusBookingScreenState extends State<BusBookingScreen> {
           ),
           if (_searched) ...[
             Padding(padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Text('${buses.length} buses found', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700))),
-            ...buses.map((b) => Container(
+              child: Text('${_buses.length} buses found', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700))),
+            ..._buses.map((b) => Container(
               margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16),
                 boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10)]),
               child: Column(children: [
                 Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                  Expanded(child: Text(b['operator'] as String, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15))),
+                  Expanded(child: Text((b['operator'] ?? '').toString(), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15))),
                   Row(children: [const Icon(Icons.star, color: AppColors.warningYellow, size: 16), const SizedBox(width: 2),
-                    Text('${b['rating']}', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13))]),
+                    Text('${b['rating'] ?? '-'}', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13))]),
                 ]),
                 const SizedBox(height: 4),
-                Text(b['type'] as String, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                Text((b['bus_type'] ?? '').toString(), style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                 const SizedBox(height: 12),
                 Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
                   Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(b['departure'] as String, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                    Text(_formatTime((b['departure_time'] ?? '').toString()), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
                     Text(_from, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                   ]),
-                  Text(b['duration'] as String, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                  Text('${b['duration_minutes']}m', style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                   Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                    Text(b['arrival'] as String, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                    Text(_formatTime((b['arrival_time'] ?? '').toString()), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
                     Text(_to, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                   ]),
                 ]),
                 const Divider(height: 24),
                 Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
                   Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('₹${b['price']}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.primaryBlue)),
-                    Text('${b['seats']} seats left', style: TextStyle(fontSize: 12, color: (b['seats'] as int) < 10 ? AppColors.errorRed : AppColors.successGreen, fontWeight: FontWeight.w500)),
+                    Text('Rs ${b['price']}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.primaryBlue)),
+                    Text('${b['available_seats']} seats left', style: TextStyle(fontSize: 12, color: ((b['available_seats'] ?? 0) as int) < 10 ? AppColors.errorRed : AppColors.successGreen, fontWeight: FontWeight.w500)),
                   ]),
                   ElevatedButton(onPressed: () {
                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bus booking simulated!'), backgroundColor: AppColors.successGreen));
@@ -109,5 +121,17 @@ class _BusBookingScreenState extends State<BusBookingScreen> {
         ]),
       ),
     );
+  }
+
+  String _formatTime(String raw) {
+    if (raw.isEmpty) return '--:--';
+    try {
+      final dt = DateTime.parse(raw).toLocal();
+      final hh = dt.hour.toString().padLeft(2, '0');
+      final mm = dt.minute.toString().padLeft(2, '0');
+      return '$hh:$mm';
+    } catch (_) {
+      return raw;
+    }
   }
 }

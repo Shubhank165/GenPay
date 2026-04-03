@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import '../screens/splash/splash_screen.dart';
-import '../screens/auth/login_screen.dart';
-import '../screens/auth/otp_screen.dart';
+import '../screens/auth/phone_login_screen.dart';
+import '../screens/auth/otp_verify_screen.dart';
 import '../screens/home/home_screen.dart';
 import '../screens/scan/scan_pay_screen.dart';
 import '../screens/scan/qr_result_screen.dart';
 import '../screens/send_money/send_money_screen.dart';
 import '../screens/send_money/enter_amount_screen.dart';
 import '../screens/send_money/payment_status_screen.dart';
+import '../screens/send_money/payment_failed_screen.dart';
 import '../screens/receive_money/receive_money_screen.dart';
 import '../screens/wallet/wallet_screen.dart';
 import '../screens/wallet/add_money_screen.dart';
@@ -39,6 +40,7 @@ class AppRoutes {
   static const String sendMoney = '/send-money';
   static const String enterAmount = '/enter-amount';
   static const String paymentStatus = '/payment-status';
+  static const String paymentFailed = '/payment-failed';
   static const String receiveMoney = '/receive-money';
   static const String wallet = '/wallet';
   static const String addMoney = '/add-money';
@@ -62,14 +64,15 @@ class AppRoutes {
 
   static Map<String, WidgetBuilder> get routes => {
         splash: (context) => const SplashScreen(),
-        login: (context) => const LoginScreen(),
-        otp: (context) => const OtpScreen(),
+        login: (context) => const PhoneLoginScreen(),
+        otp: (context) => const OTPVerifyScreen(),
         home: (context) => const HomeScreen(),
         scanPay: (context) => const ScanPayScreen(),
         qrResult: (context) => const QrResultScreen(),
         sendMoney: (context) => const SendMoneyScreen(),
         enterAmount: (context) => const EnterAmountScreen(),
         paymentStatus: (context) => const PaymentStatusScreen(),
+        paymentFailed: (context) => const PaymentFailedScreen(),
         receiveMoney: (context) => const ReceiveMoneyScreen(),
         wallet: (context) => const WalletScreen(),
         addMoney: (context) => const AddMoneyScreen(),

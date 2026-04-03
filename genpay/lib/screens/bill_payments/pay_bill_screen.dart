@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../config/constants.dart';
+import '../../models/bill.dart';
+import '../../providers/bill_provider.dart';
 
 class PayBillScreen extends StatefulWidget {
   const PayBillScreen({super.key});
@@ -8,13 +11,46 @@ class PayBillScreen extends StatefulWidget {
 
 class _PayBillScreenState extends State<PayBillScreen> {
   final _consumerController = TextEditingController();
+  String? _selectedProvider;
   bool _billFetched = false;
   bool _isFetching = false;
 
+  BillType _mapCategoryToType(String category) {
+    final value = category.toLowerCase();
+    if (value.contains('gas')) return BillType.gas;
+    if (value.contains('water')) return BillType.water;
+    if (value.contains('broadband')) return BillType.broadband;
+    if (value.contains('dth')) return BillType.dth;
+    if (value.contains('credit')) return BillType.creditCard;
+    if (value.contains('insurance')) return BillType.insurance;
+    if (value.contains('rent')) return BillType.rent;
+    if (value.contains('education')) return BillType.education;
+    if (value.contains('municipal')) return BillType.municipalTax;
+    if (value.contains('fastag')) return BillType.fastag;
+    return BillType.electricity;
+  }
+
   void _fetchBill() async {
+    final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+    final category = (args?['category'] ?? 'Bill Payment').toString();
+    final type = _mapCategoryToType(category);
+
+    if (_consumerController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a consumer number')),
+      );
+      return;
+    }
+
     setState(() => _isFetching = true);
-    await Future.delayed(const Duration(milliseconds: 1500));
-    setState(() { _isFetching = false; _billFetched = true; });
+
+    final provider = context.read<BillProvider>();
+    final bill = await provider.fetchBill(type, _consumerController.text.trim());
+
+    setState(() {
+      _isFetching = false;
+      _billFetched = bill != null;
+    });
   }
 
   @override void dispose() { _consumerController.dispose(); super.dispose(); }
@@ -23,6 +59,8 @@ class _PayBillScreenState extends State<PayBillScreen> {
   Widget build(BuildContext context) {
     final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
     final category = args?['category'] ?? 'Bill Payment';
+    final billProvider = context.watch<BillProvider>();
+    final currentBill = billProvider.currentBill;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -40,7 +78,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
                 hint: const Text('Choose provider'),
                 items: ['BSES Rajdhani', 'BSES Yamuna', 'Tata Power', 'Adani Electricity', 'MSEDCL']
                     .map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
-                onChanged: (_) {},
+                onChanged: (v) => setState(() => _selectedProvider = v),
               ),
               const SizedBox(height: 16),
               const Text('Consumer Number', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
@@ -66,20 +104,55 @@ class _PayBillScreenState extends State<PayBillScreen> {
               child: Column(children: [
                 Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
                   const Text('Bill Amount', style: TextStyle(fontSize: 14, color: AppColors.textSecondary)),
-                  const Text('₹2,340.00', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                  Text(
+                    currentBill != null
+                        ? 'Rs ${currentBill.amount.toStringAsFixed(2)}'
+                        : 'Rs 0.00',
+                    style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+                  ),
                 ]),
                 const Divider(height: 24),
-                _buildRow('Bill Date', '15 Mar 2026'),
+                _buildRow('Bill Date', '${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year}'),
                 const SizedBox(height: 8),
-                _buildRow('Due Date', '05 Apr 2026'),
+                _buildRow(
+                  'Due Date',
+                  currentBill != null
+                      ? '${currentBill.dueDate.day}/${currentBill.dueDate.month}/${currentBill.dueDate.year}'
+                      : '-',
+                ),
                 const SizedBox(height: 8),
                 _buildRow('Consumer No.', _consumerController.text.isEmpty ? 'N/A' : _consumerController.text),
+                if (_selectedProvider != null) ...[
+                  const SizedBox(height: 8),
+                  _buildRow('Provider', _selectedProvider!),
+                ],
                 const SizedBox(height: 20),
                 SizedBox(width: double.infinity, height: 54,
                   child: ElevatedButton(
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: billProvider.isLoading || currentBill == null
+                        ? null
+                        : () async {
+                            final messenger = ScaffoldMessenger.of(context);
+                            final navigator = Navigator.of(context);
+                            final ok = await context.read<BillProvider>().payBill(currentBill.id);
+                            messenger.showSnackBar(
+                              SnackBar(
+                                content: Text(ok ? 'Bill paid successfully' : 'Bill payment failed'),
+                                backgroundColor: ok ? AppColors.successGreen : AppColors.errorRed,
+                              ),
+                            );
+                            if (ok) {
+                              navigator.pop();
+                            }
+                          },
                     style: ElevatedButton.styleFrom(backgroundColor: AppColors.darkBlue, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
-                    child: const Text('Pay ₹2,340.00', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)))),
+                    child: Text(
+                      currentBill != null
+                          ? 'Pay Rs ${currentBill.amount.toStringAsFixed(2)}'
+                          : 'Pay Bill',
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    ),
+                  )),
               ]),
             ),
           ],

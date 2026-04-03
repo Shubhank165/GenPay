@@ -51,4 +51,26 @@ class BankAccountModel {
       bankColor: bankColor ?? this.bankColor,
     );
   }
+
+  factory BankAccountModel.fromBackendJson(Map<String, dynamic> json) {
+    final bankName = (json['bank_name'] ?? '').toString();
+    final colorMap = <String, int>{
+      'state bank of india': 0xFF1565C0,
+      'hdfc bank': 0xFF004C8F,
+      'icici bank': 0xFFB85C1F,
+    };
+
+    final lower = bankName.toLowerCase();
+    return BankAccountModel(
+      id: (json['id'] ?? '').toString(),
+      bankName: bankName,
+      accountNumber: (json['account_number'] ?? '').toString(),
+      balance: ((json['balance'] ?? 0) as num).toDouble(),
+      ifscCode: (json['ifsc_code'] ?? '').toString(),
+      upiId: (json['upi_id'] ?? '').toString(),
+      isDefault: json['is_default'] == true,
+      bankLogoIcon: 'account_balance',
+      bankColor: colorMap[lower] ?? 0xFF1565C0,
+    );
+  }
 }

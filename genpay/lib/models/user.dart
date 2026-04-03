@@ -72,4 +72,18 @@ class UserModel {
       createdAt: DateTime.parse(json['createdAt']),
     );
   }
+
+  factory UserModel.fromBackendJson(Map<String, dynamic> json) {
+    final createdRaw = json['created_at'] ?? json['createdAt'];
+    return UserModel(
+      id: (json['id'] ?? '').toString(),
+      name: (json['name'] ?? '').toString(),
+      phone: (json['phone'] ?? '').toString(),
+      email: (json['email'] ?? '').toString(),
+      upiId: (json['upi_id'] ?? json['upiId'] ?? '').toString(),
+      isKycVerified: (json['kyc_status'] ?? '').toString().toLowerCase() == 'verified',
+      walletBalance: ((json['wallet_balance'] ?? json['walletBalance'] ?? 0) as num).toDouble(),
+      createdAt: createdRaw != null ? DateTime.parse(createdRaw.toString()) : DateTime.now(),
+    );
+  }
 }

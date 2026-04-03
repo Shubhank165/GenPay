@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/bank_account.dart';
-import '../services/mock_data_service.dart';
+import '../services/api_service.dart';
+import '../services/local_storage_service.dart';
 
 class BankProvider extends ChangeNotifier {
   List<BankAccountModel> _accounts = [];
@@ -18,23 +19,32 @@ class BankProvider extends ChangeNotifier {
   double get totalBalance =>
       _accounts.fold(0.0, (sum, a) => sum + a.balance);
 
-  void loadAccounts() {
+  Future<void> loadAccounts() async {
     _isLoading = true;
     notifyListeners();
 
-    _accounts = MockDataService.getMockBankAccounts();
-    _isLoading = false;
-    notifyListeners();
+    try {
+      final token = await LocalStorageService.getAuthToken();
+      if (token == null || token.isEmpty) {
+        _accounts = [];
+      } else {
+        final raw = await ApiService.listBankAccounts(token);
+        _accounts = raw
+            .whereType<Map>()
+            .map((item) => BankAccountModel.fromBackendJson(Map<String, dynamic>.from(item)))
+            .toList();
+      }
+    } catch (_) {
+      _accounts = [];
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 
   Future<bool> checkBalance(String accountId) async {
-    _isLoading = true;
-    notifyListeners();
-
-    await Future.delayed(const Duration(milliseconds: 1200));
-    _isLoading = false;
-    notifyListeners();
-    return true;
+    await loadAccounts();
+    return _accounts.any((a) => a.id == accountId);
   }
 
   void addAccount(BankAccountModel account) {

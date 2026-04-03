@@ -7,6 +7,7 @@ import 'providers/transaction_provider.dart';
 import 'providers/bank_provider.dart';
 import 'providers/upi_provider.dart';
 import 'providers/bill_provider.dart';
+import 'services/navigation_service.dart';
 import 'package:provider/provider.dart';
 
 void main() {
@@ -32,6 +33,7 @@ class GenPayApp extends StatelessWidget {
         title: 'GenPay',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.lightTheme,
+        navigatorKey: NavigationService.navigatorKey,
         initialRoute: AppRoutes.splash,
         routes: AppRoutes.routes,
       ),

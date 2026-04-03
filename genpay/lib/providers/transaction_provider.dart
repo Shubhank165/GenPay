@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/transaction.dart';
-import '../services/mock_data_service.dart';
+import '../services/api_service.dart';
+import '../services/local_storage_service.dart';
 
 class TransactionProvider extends ChangeNotifier {
   List<TransactionModel> _transactions = [];
@@ -15,14 +16,29 @@ class TransactionProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String get searchQuery => _searchQuery;
 
-  void loadTransactions() {
+  Future<void> loadTransactions() async {
     _isLoading = true;
     notifyListeners();
 
-    _transactions = MockDataService.getMockTransactions();
-    _filteredTransactions = List.from(_transactions);
-    _isLoading = false;
-    notifyListeners();
+    try {
+      final token = await LocalStorageService.getAuthToken();
+      if (token == null || token.isEmpty) {
+        _transactions = [];
+      } else {
+        final raw = await ApiService.listTransactions(token);
+        _transactions = raw
+            .whereType<Map>()
+            .map((item) => TransactionModel.fromBackendJson(Map<String, dynamic>.from(item)))
+            .toList();
+      }
+      _applyFilters();
+    } catch (_) {
+      _transactions = [];
+      _filteredTransactions = [];
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 
   void addTransaction(TransactionModel transaction) {
