@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import os
 import re
+from pathlib import Path
+from tempfile import NamedTemporaryFile
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.middleware import get_current_user
+from ..core.config import get_settings
 from ..core.database import get_db
 from ..core.graph import run_agent_graph
 from ..core.state import AgentState
@@ -25,9 +29,12 @@ from ..models import (
 from ..services.local_fallback import create_transaction as local_create_transaction
 from ..services.local_fallback import get_user_by_id
 from ..services.local_fallback import list_transactions as local_list_transactions
+from ..services.offline_payment_otp import consume_offline_payment_token
+from ..services.speech_to_text import transcribe_audio_file
 
 router = APIRouter(prefix="/agent", tags=["Agentic AI"])
 UPI_PIN = "165165"
+settings = get_settings()
 
 
 def _to_float(value: object, default: float = 0.0) -> float:
@@ -340,6 +347,53 @@ async def _persist_agent_action(
     }
 
 
+@router.post("/transcribe", response_model=dict)
+async def transcribe_prompt_audio(
+    audio: UploadFile = File(...),
+    language: str | None = Form(default="en"),
+) -> dict:
+    content_type = (audio.content_type or "").lower()
+    suffix = Path(audio.filename or "prompt.wav").suffix.lower() or ".wav"
+    allowed_ext = {".wav", ".mp3", ".m4a", ".aac", ".ogg", ".webm", ".flac"}
+    has_audio_mime = content_type.startswith("audio/")
+    is_generic_upload = content_type in {"", "application/octet-stream"} and suffix in allowed_ext
+    if not has_audio_mime and not is_generic_upload:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Only audio uploads are supported",
+        )
+
+    max_size_bytes = max(1, settings.STT_MAX_AUDIO_MB) * 1024 * 1024
+    total_size = 0
+    temp_path: str | None = None
+
+    try:
+        with NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            while True:
+                chunk = await audio.read(1024 * 1024)
+                if not chunk:
+                    break
+                total_size += len(chunk)
+                if total_size > max_size_bytes:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail=f"Audio too large. Max {settings.STT_MAX_AUDIO_MB} MB",
+                    )
+                tmp.write(chunk)
+            temp_path = tmp.name
+
+        text = transcribe_audio_file(temp_path, language=(language or "en").strip() or "en")
+        return {"text": text}
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    finally:
+        await audio.close()
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
+
+
 @router.post("/query", response_model=AgentQueryResponse)
 async def query_agent(
     payload: AgentQueryRequest,
@@ -397,15 +451,29 @@ async def query_agent(
     intent = result.get("intent") or {}
     intent_name = str(intent.get("intent") or "")
 
-    if intent_name in {"send_money", "recharge"} and payload.upi_pin != UPI_PIN:
-        return AgentQueryResponse(
-            status="failed",
-            message="Action could not be completed",
-            reason="Invalid or missing UPI PIN",
-            risk_score=result.get("risk_score"),
-            simulation=result.get("simulation"),
-            options=None,
-        )
+    if intent_name in {"send_money", "recharge"}:
+        payment_mode = str(payload.payment_mode or "online").lower()
+        if payment_mode == "offline":
+            token = payload.payment_otp_token or ""
+            if not token or not consume_offline_payment_token(effective_user_id, token):
+                return AgentQueryResponse(
+                    status="failed",
+                    message="Action could not be completed",
+                    reason="Offline payment OTP verification required",
+                    risk_score=result.get("risk_score"),
+                    simulation=result.get("simulation"),
+                    options=None,
+                )
+        else:
+            if payload.upi_pin != UPI_PIN:
+                return AgentQueryResponse(
+                    status="failed",
+                    message="Action could not be completed",
+                    reason="Invalid or missing UPI PIN",
+                    risk_score=result.get("risk_score"),
+                    simulation=result.get("simulation"),
+                    options=None,
+                )
 
     if result.get("status") == "success" and execution_result.get("status") == "success":
         if intent_name == "balance_query":

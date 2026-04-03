@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from app.future_scope.intents_taxonomy import CANONICAL_INTENTS
-from app.future_scope.schemas import IntentPrediction
+from .intents_taxonomy import CANONICAL_INTENTS
+from .schemas import IntentPrediction
 
 
 class IntentClassifier(ABC):
@@ -14,10 +14,10 @@ class IntentClassifier(ABC):
 
 class MockIntentClassifier(IntentClassifier):
     """
-    Safe placeholder adapter.
+    Lightweight fallback adapter.
 
-    This class intentionally avoids importing heavy ML dependencies so it can
-    live in production codebase without impacting the current Gemini runtime.
+    This keeps local intent inference available when finetuned model weights
+    are not mounted in a development environment.
     """
 
     async def predict(self, text: str) -> IntentPrediction:

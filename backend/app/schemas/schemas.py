@@ -39,6 +39,8 @@ class TransactionCreate(BaseModel):
     recipient_identifier: Optional[str] = None
     description: Optional[str] = None
     upi_pin: Optional[str] = Field(None, min_length=6, max_length=6)
+    payment_mode: str = Field("online", pattern=r"^(online|offline)$")
+    payment_otp_token: Optional[str] = None
 
 class TransactionResponse(BaseModel):
     id: str

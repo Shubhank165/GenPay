@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from app.future_scope.distilbert_adapter import IntentClassifier
-from app.future_scope.intents_taxonomy import INTENT_ALIASES, REQUIRED_FIELDS_BY_INTENT
-from app.future_scope.schemas import NLUResult, SlotExtraction
-from app.future_scope.slots import extract_slots
+from .distilbert_adapter import IntentClassifier
+from .intents_taxonomy import INTENT_ALIASES, REQUIRED_FIELDS_BY_INTENT
+from .schemas import NLUResult, SlotExtraction
+from .slots import extract_slots
 
 
 def _normalize_intent(intent: str) -> str:

@@ -30,8 +30,16 @@ class InMemoryStore:
             self._default_phone[user_id] = "9876543210"
 
     def resolve_contact(self, user_id: str, recipient_hint: str) -> dict[str, Any]:
-        hint = recipient_hint.lower().strip()
-        candidates = [c for c in self._contacts.get(user_id, []) if hint in c.lower()]
+        def _normalize(value: str) -> str:
+            cleaned = "".join(ch.lower() if ch.isalnum() or ch.isspace() else " " for ch in value)
+            return " ".join(cleaned.split())
+
+        hint = _normalize(recipient_hint)
+        candidates = [
+            c
+            for c in self._contacts.get(user_id, [])
+            if hint and hint in _normalize(c)
+        ]
 
         if len(candidates) == 1:
             resolved = candidates[0]

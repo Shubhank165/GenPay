@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import re
 
-from ..core.llm import GeminiClient
+from ..core.llm import LocalIntentEngine
 from ..core.state import AgentState
 
-_llm = GeminiClient()
+_intent_engine = LocalIntentEngine()
 
 
 def _extract_candidate_recipient(user_input: str) -> str | None:
@@ -25,7 +25,7 @@ def _coerce_send_money_intent(user_input: str, detected: dict) -> dict:
     has_phone_number = re.search(r"(?:\+91)?[6-9]\d{9}", lowered) is not None
     candidate_recipient = _extract_candidate_recipient(user_input)
 
-    # Gemini occasionally classifies person-to-person "pay X to Y" as recharge.
+    # Classifier may occasionally map person-to-person "pay X to Y" as recharge.
     if intent_name == "recharge" and has_transfer_verb and candidate_recipient and not has_recharge_keyword and not has_phone_number:
         coerced = dict(detected)
         coerced["intent"] = "send_money"
@@ -81,7 +81,7 @@ def _sanitize_missing_fields(detected: dict) -> dict:
 async def intent_node(state: AgentState) -> AgentState:
     state["current_step"] = 1
     state["status"] = "in_progress"
-    detected = await _llm.detect_intent(state["user_input"])
+    detected = await _intent_engine.detect_intent(state["user_input"])
     detected = _coerce_send_money_intent(state["user_input"], detected)
     detected = _sanitize_missing_fields(detected)
     state["intent"] = detected

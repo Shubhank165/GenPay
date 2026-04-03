@@ -1,6 +1,7 @@
 import uuid
+import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -17,12 +18,45 @@ from ..services.local_fallback import get_or_create_user, get_user_by_id
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 settings = get_settings()
 STARTING_WALLET_BALANCE = 19748.45
+logger = logging.getLogger("uvicorn.error")
+
+
+def _attach_otp_response_meta(meta: dict[str, str], response: dict) -> None:
+    provider = meta.get("provider")
+    if provider:
+        response["provider"] = provider
+    twilio_status = meta.get("twilio_status")
+    if twilio_status:
+        response["twilio_status"] = twilio_status
+    if not settings.DEBUG:
+        return
+    twilio_sid = meta.get("twilio_sid")
+    if twilio_sid:
+        response["twilio_sid"] = twilio_sid
+    error_code = meta.get("error_code")
+    if error_code:
+        response["provider_error_code"] = error_code
+    error_detail = meta.get("error_detail")
+    if error_detail:
+        response["provider_error_detail"] = error_detail
 
 
 @router.post("/request-otp", response_model=dict)
-async def request_otp(request: PhoneLoginRequest):
-    normalized = request_otp_call(request.phone)
+async def request_otp(request: PhoneLoginRequest, http_request: Request):
+    meta = request_otp_call(request.phone)
+    normalized = meta["phone"]
     response = {"message": "OTP call initiated", "phone": normalized}
+
+    logger.info(
+        "OTP request host=%s ua=%s phone=%s provider=%s",
+        http_request.client.host if http_request.client else "unknown",
+        http_request.headers.get("user-agent", "unknown"),
+        normalized,
+        meta.get("provider", "unknown"),
+    )
+
+    _attach_otp_response_meta(meta, response)
+
     code = debug_otp_hint(normalized)
     if code:
         response["message"] = "OTP fallback enabled (debug mode)"
@@ -31,10 +65,22 @@ async def request_otp(request: PhoneLoginRequest):
 
 
 @router.post("/send-otp", response_model=dict)
-async def send_otp_alias(request: PhoneLoginRequest):
+async def send_otp_alias(request: PhoneLoginRequest, http_request: Request):
     """Backward compatible alias for older clients."""
-    normalized = request_otp_call(request.phone)
+    meta = request_otp_call(request.phone)
+    normalized = meta["phone"]
     response = {"message": "OTP call initiated", "phone": normalized}
+
+    logger.info(
+        "OTP alias request host=%s ua=%s phone=%s provider=%s",
+        http_request.client.host if http_request.client else "unknown",
+        http_request.headers.get("user-agent", "unknown"),
+        normalized,
+        meta.get("provider", "unknown"),
+    )
+
+    _attach_otp_response_meta(meta, response)
+
     code = debug_otp_hint(normalized)
     if code:
         response["message"] = "OTP fallback enabled (debug mode)"

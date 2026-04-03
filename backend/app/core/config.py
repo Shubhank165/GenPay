@@ -35,17 +35,25 @@ class Settings(BaseSettings):
     AGENT_ENABLED: bool = False
     AGENT_MAX_QUERY_BUDGET: float = 100000.0
 
-    # Gemini + Agentic Workflow
-    GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-1.5-flash"
+    # Agentic workflow thresholds
     AGENT_RISK_THRESHOLD: int = 60
     AGENT_HIGH_VALUE_THRESHOLD: float = 2000.0
     AGENT_MAX_RETRIES: int = 1
 
-    # Future-scope NLU settings (not wired into current runtime).
-    DISTILBERT_ENABLED: bool = False
+    # Local NLU settings (finetuned weights expected on local filesystem).
+    DISTILBERT_ENABLED: bool = True
     DISTILBERT_MODEL_PATH: str = "./models/distilbert-intent"
     DISTILBERT_CONFIDENCE_THRESHOLD: float = 0.70
+    DISTILBERT_LABEL_ORDER: str = (
+        "send_money,recharge,book_service,balance_query,offers_query,"
+        "transaction_history,recharge_plans_query,unknown"
+    )
+    SENTENCE_TRANSFORMER_MODEL_PATH: str = "./models/sentence-transformer-finance"
+    SENTENCE_SIMILARITY_THRESHOLD: float = 0.48
+
+    # Speech-to-text (voice prompt input)
+    STT_MODEL_SIZE: str = "tiny.en"
+    STT_MAX_AUDIO_MB: int = 8
 
     class Config:
         env_file = str(BACKEND_ROOT / ".env")

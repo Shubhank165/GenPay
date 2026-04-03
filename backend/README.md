@@ -7,10 +7,10 @@ Production-style prototype backend for autonomous financial workflows.
 - FastAPI endpoint: `POST /agent/query`
 - LangGraph orchestration:
   - intent -> context -> planner -> risk -> (confirm | execute) -> retry
-- Gemini API based intent extraction with strict JSON output
+- Local intent engine using finetuned DistilBERT + sentence-transformer + rules
 - In-memory context memory (recent contacts, trusted recipients, recent transactions)
 - Rule-based risk engine + human-in-the-loop confirmation
-- Mock execution tools for send money and recharge
+- Manual tool execution for send money and recharge
 - Retry once on execution failure
 
 ## Folder layout
@@ -59,7 +59,10 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Set `GEMINI_API_KEY` in `.env`.
+Set local model paths in `.env`:
+
+- `DISTILBERT_MODEL_PATH` (finetuned intent classifier weights)
+- `SENTENCE_TRANSFORMER_MODEL_PATH` (local embedding model for semantic routing)
 
 3. Run API
 
@@ -133,5 +136,5 @@ Content-Type: application/json
 
 ## Notes
 
-- If Gemini API is not configured, a deterministic parser fallback is used.
+- The intent classifier runs fully local and does not call external LLM APIs.
 - Booking intent is parsed but execution is intentionally marked as not implemented for extensibility.

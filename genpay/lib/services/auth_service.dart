@@ -9,8 +9,18 @@ class AuthService {
   static const _storage = FlutterSecureStorage();
   static const _tokenKey = 'auth_token';
   static String? _debugOtp;
+  static String? _otpProvider;
+  static String? _otpProviderStatus;
+  static String? _otpProviderSid;
+  static String? _otpProviderErrorCode;
+  static String? _otpProviderError;
 
   static String? get debugOtp => _debugOtp;
+  static String? get otpProvider => _otpProvider;
+  static String? get otpProviderStatus => _otpProviderStatus;
+  static String? get otpProviderSid => _otpProviderSid;
+  static String? get otpProviderErrorCode => _otpProviderErrorCode;
+  static String? get otpProviderError => _otpProviderError;
 
   static String normalizeIndianPhone(String phoneInput) {
     final digits = phoneInput.replaceAll(RegExp(r'[^0-9+]'), '');
@@ -43,8 +53,23 @@ class AuthService {
     if (decoded is Map<String, dynamic>) {
       final code = decoded['debug_otp']?.toString();
       _debugOtp = (code != null && code.isNotEmpty) ? code : null;
+      final provider = decoded['provider']?.toString();
+      _otpProvider = (provider != null && provider.isNotEmpty) ? provider : null;
+      final status = decoded['twilio_status']?.toString();
+      _otpProviderStatus = (status != null && status.isNotEmpty) ? status : null;
+      final sid = decoded['twilio_sid']?.toString();
+      _otpProviderSid = (sid != null && sid.isNotEmpty) ? sid : null;
+      final errorCode = decoded['provider_error_code']?.toString();
+      _otpProviderErrorCode = (errorCode != null && errorCode.isNotEmpty) ? errorCode : null;
+      final error = decoded['provider_error_detail']?.toString();
+      _otpProviderError = (error != null && error.isNotEmpty) ? error : null;
     } else {
       _debugOtp = null;
+      _otpProvider = null;
+      _otpProviderStatus = null;
+      _otpProviderSid = null;
+      _otpProviderErrorCode = null;
+      _otpProviderError = null;
     }
 
     return normalized;
@@ -77,6 +102,11 @@ class AuthService {
     }
 
     _debugOtp = null;
+    _otpProvider = null;
+    _otpProviderStatus = null;
+    _otpProviderSid = null;
+    _otpProviderErrorCode = null;
+    _otpProviderError = null;
     await setToken(token);
     return token;
   }

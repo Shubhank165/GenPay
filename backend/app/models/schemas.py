@@ -18,6 +18,14 @@ class AgentQueryRequest(BaseModel):
         max_length=6,
         description="UPI PIN required for transactional intents",
     )
+    payment_mode: Literal["online", "offline"] = Field(
+        default="online",
+        description="online uses UPI PIN; offline uses OTP verification token",
+    )
+    payment_otp_token: str | None = Field(
+        default=None,
+        description="One-time token returned by offline payment OTP verification",
+    )
 
 
 class AgentQueryResponse(BaseModel):

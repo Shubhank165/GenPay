@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:record/record.dart';
 import '../../config/constants.dart';
 import '../../config/routes.dart';
 import '../../providers/auth_provider.dart';
@@ -22,6 +24,8 @@ import '../../screens/offers/offers_screen.dart';
 import '../../screens/passbook/passbook_screen.dart';
 import '../../screens/profile/profile_screen.dart';
 
+enum PaymentMode { online, offline }
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -32,12 +36,18 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _currentNavIndex = 0;
   final TextEditingController _promptController = TextEditingController();
+  final AudioRecorder _audioRecorder = AudioRecorder();
   static const String _upiPin = '165165';
   bool _isPromptLoading = false;
+  bool _isOfflineOtpLoading = false;
+  bool _isVoiceRecording = false;
+  bool _isVoiceTranscribing = false;
   bool _needsConfirmation = false;
   String _promptFeedback = '';
   String _lastPrompt = '';
   String? _lastUpiPin;
+  String? _lastPaymentOtpToken;
+  PaymentMode _paymentMode = PaymentMode.online;
   List<Map<String, dynamic>> _promptOptions = [];
 
   @override
@@ -50,6 +60,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _audioRecorder.dispose();
     _promptController.dispose();
     super.dispose();
   }
@@ -67,14 +78,29 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
+    final auth = context.read<AuthProvider>();
+
     String? upiPin;
+    String? paymentOtpToken;
+    final paymentMode = _paymentMode == PaymentMode.offline ? 'offline' : 'online';
     if (_isTransactionPrompt(message)) {
-      if (userConfirmation && _lastUpiPin != null) {
-        upiPin = _lastUpiPin;
+      if (_paymentMode == PaymentMode.offline) {
+        if (userConfirmation && _lastPaymentOtpToken != null) {
+          paymentOtpToken = _lastPaymentOtpToken;
+        } else {
+          paymentOtpToken = await _verifyOfflinePaymentOtpForCurrentUser();
+          if (paymentOtpToken == null) {
+            return;
+          }
+        }
       } else {
-        upiPin = await _askUpiPin();
-        if (upiPin == null) {
-          return;
+        if (userConfirmation && _lastUpiPin != null) {
+          upiPin = _lastUpiPin;
+        } else {
+          upiPin = await _askUpiPin();
+          if (upiPin == null) {
+            return;
+          }
         }
       }
     }
@@ -86,7 +112,6 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     try {
-      final auth = context.read<AuthProvider>();
       final storedUserId = await LocalStorageService.getUserId();
       final userId = auth.currentUser?.id ?? storedUserId ?? '123';
 
@@ -95,6 +120,8 @@ class _HomeScreenState extends State<HomeScreen> {
         message,
         userConfirmation: userConfirmation,
         upiPin: upiPin,
+        paymentMode: paymentMode,
+        paymentOtpToken: paymentOtpToken,
       );
 
       final status = (response['status'] ?? '').toString();
@@ -112,6 +139,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _needsConfirmation = true;
           _lastPrompt = message;
           _lastUpiPin = upiPin;
+          _lastPaymentOtpToken = paymentOtpToken;
           _promptFeedback = messageText;
           _promptOptions = options;
         });
@@ -119,6 +147,7 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           _needsConfirmation = false;
           _lastUpiPin = null;
+          _lastPaymentOtpToken = null;
           _promptFeedback = reason.isNotEmpty ? '$messageText ($reason)' : messageText;
           _promptOptions = options;
         });
@@ -128,6 +157,7 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _needsConfirmation = false;
         _lastUpiPin = null;
+        _lastPaymentOtpToken = null;
         _promptFeedback = 'Prompt execution failed: $e';
         _promptOptions = [];
       });
@@ -183,6 +213,201 @@ class _HomeScreenState extends State<HomeScreen> {
       return null;
     }
     return pin;
+  }
+
+  Future<String?> _resolveCurrentUserPhone() async {
+    final auth = context.read<AuthProvider>();
+    final profilePhone = auth.currentUser?.phone.trim();
+    if (profilePhone != null && profilePhone.isNotEmpty) {
+      return profilePhone;
+    }
+    final storedPhone = await LocalStorageService.getPhoneNumber();
+    if (storedPhone != null && storedPhone.trim().isNotEmpty) {
+      return storedPhone.trim();
+    }
+    return null;
+  }
+
+  Future<String?> _askOfflinePaymentOtp({String? debugOtp}) async {
+    final controller = TextEditingController();
+    final otp = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Verify Offline Payment'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Enter OTP received on call to authorize offline payment.'),
+            const SizedBox(height: 10),
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              maxLength: 6,
+              decoration: const InputDecoration(hintText: '6-digit OTP'),
+            ),
+            if (debugOtp != null && debugOtp.isNotEmpty)
+              Text(
+                'Debug OTP: $debugOtp',
+                style: const TextStyle(color: AppColors.warningYellow, fontWeight: FontWeight.w700),
+              ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('Verify'),
+          ),
+        ],
+      ),
+    );
+    return otp;
+  }
+
+  Future<String?> _verifyOfflinePaymentOtpForCurrentUser() async {
+    final phone = await _resolveCurrentUserPhone();
+    if (phone == null) {
+      if (!mounted) return null;
+      setState(() {
+        _promptFeedback = 'Phone number not found for offline OTP verification';
+      });
+      return null;
+    }
+
+    setState(() {
+      _isOfflineOtpLoading = true;
+      _promptFeedback = 'Requesting offline payment OTP call...';
+    });
+
+    try {
+      final request = await ApiService.requestOfflinePaymentOtp(phone);
+      final otp = await _askOfflinePaymentOtp(debugOtp: request['debug_otp']?.toString());
+      if (otp == null || otp.length != 6) {
+        return null;
+      }
+
+      final verify = await ApiService.verifyOfflinePaymentOtp(phone, otp);
+      final token = (verify['payment_otp_token'] ?? '').toString();
+      if (token.isEmpty) {
+        return null;
+      }
+
+      if (!mounted) return token;
+      setState(() {
+        _promptFeedback = 'Offline OTP verified. Processing payment...';
+      });
+      return token;
+    } catch (e) {
+      if (!mounted) return null;
+      setState(() {
+        _promptFeedback = 'Offline payment OTP failed: $e';
+      });
+      return null;
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isOfflineOtpLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _setPaymentMode(PaymentMode mode) async {
+    if (_isPromptLoading || _isVoiceTranscribing || _isOfflineOtpLoading) {
+      return;
+    }
+
+    setState(() {
+      _paymentMode = mode;
+      _lastPaymentOtpToken = null;
+      if (mode == PaymentMode.offline) {
+        _promptFeedback = 'Offline mode selected. OTP call will start after you press Run.';
+      } else {
+        _promptFeedback = 'Online payment mode enabled';
+      }
+    });
+  }
+
+  Future<void> _toggleVoicePromptInput() async {
+    if (_isVoiceTranscribing || _isPromptLoading) {
+      return;
+    }
+
+    if (_isVoiceRecording) {
+      final path = await _audioRecorder.stop();
+      if (!mounted) return;
+
+      setState(() {
+        _isVoiceRecording = false;
+      });
+
+      if (path == null || path.isEmpty) {
+        setState(() {
+          _promptFeedback = 'Voice capture failed. Please try again.';
+        });
+        return;
+      }
+
+      setState(() {
+        _isVoiceTranscribing = true;
+        _promptFeedback = 'Transcribing voice input...';
+      });
+
+      try {
+        final text = await ApiService.transcribePromptAudio(path);
+        if (!mounted) return;
+
+        setState(() {
+          final current = _promptController.text.trim();
+          _promptController.text = current.isEmpty ? text : '$current $text';
+          _promptController.selection = TextSelection.fromPosition(
+            TextPosition(offset: _promptController.text.length),
+          );
+          _promptFeedback = 'Voice input added to prompt';
+        });
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _promptFeedback = 'Voice transcription failed: $e';
+        });
+      } finally {
+        if (mounted) {
+          setState(() {
+            _isVoiceTranscribing = false;
+          });
+        }
+      }
+      return;
+    }
+
+    final hasPermission = await _audioRecorder.hasPermission();
+    if (!hasPermission) {
+      if (!mounted) return;
+      setState(() {
+        _promptFeedback = 'Microphone permission is required for voice input';
+      });
+      return;
+    }
+
+    final directory = await getTemporaryDirectory();
+    final path = '${directory.path}/genpay_prompt_${DateTime.now().millisecondsSinceEpoch}.wav';
+    await _audioRecorder.start(
+      const RecordConfig(
+        encoder: AudioEncoder.wav,
+        sampleRate: 16000,
+        numChannels: 1,
+      ),
+      path: path,
+    );
+
+    if (!mounted) return;
+    setState(() {
+      _isVoiceRecording = true;
+      _promptFeedback = 'Listening... Tap mic again to stop';
+    });
   }
 
   Widget _getBody() {
@@ -319,6 +544,54 @@ class _HomeScreenState extends State<HomeScreen> {
                             Row(
                               children: [
                                 Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: (_isPromptLoading || _isOfflineOtpLoading)
+                                        ? null
+                                        : () => _setPaymentMode(PaymentMode.online),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: Colors.white,
+                                      side: BorderSide(
+                                        color: _paymentMode == PaymentMode.online ? Colors.white : Colors.white70,
+                                      ),
+                                      backgroundColor: _paymentMode == PaymentMode.online
+                                          ? Colors.white.withOpacity(0.22)
+                                          : Colors.transparent,
+                                    ),
+                                    icon: const Icon(Icons.wifi_rounded, size: 18),
+                                    label: const Text('Online'),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: (_isPromptLoading || _isOfflineOtpLoading)
+                                        ? null
+                                        : () => _setPaymentMode(PaymentMode.offline),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: Colors.white,
+                                      side: BorderSide(
+                                        color: _paymentMode == PaymentMode.offline ? Colors.white : Colors.white70,
+                                      ),
+                                      backgroundColor: _paymentMode == PaymentMode.offline
+                                          ? Colors.white.withOpacity(0.22)
+                                          : Colors.transparent,
+                                    ),
+                                    icon: _isOfflineOtpLoading
+                                        ? const SizedBox(
+                                            width: 14,
+                                            height: 14,
+                                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                          )
+                                        : const Icon(Icons.phone_forwarded_rounded, size: 18),
+                                    label: const Text('Offline'),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                Expanded(
                                   child: TextField(
                                     controller: _promptController,
                                     style: const TextStyle(color: Colors.white),
@@ -341,7 +614,34 @@ class _HomeScreenState extends State<HomeScreen> {
                                 SizedBox(
                                   height: 46,
                                   child: ElevatedButton(
-                                    onPressed: _isPromptLoading ? null : () => _submitPrompt(),
+                                    onPressed: (_isPromptLoading || _isVoiceTranscribing || _isOfflineOtpLoading)
+                                        ? null
+                                        : _toggleVoicePromptInput,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: _isVoiceRecording ? AppColors.errorRed : Colors.white,
+                                      foregroundColor: _isVoiceRecording ? Colors.white : AppColors.darkBlue,
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                                    ),
+                                    child: _isVoiceTranscribing
+                                        ? const SizedBox(
+                                            width: 18,
+                                            height: 18,
+                                            child: CircularProgressIndicator(strokeWidth: 2),
+                                          )
+                                        : Icon(_isVoiceRecording ? Icons.stop_rounded : Icons.mic_rounded),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                SizedBox(
+                                  height: 46,
+                                  child: ElevatedButton(
+                                    onPressed: (_isPromptLoading ||
+                                            _isVoiceRecording ||
+                                            _isVoiceTranscribing ||
+                                            _isOfflineOtpLoading)
+                                        ? null
+                                        : () => _submitPrompt(),
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: Colors.white,
                                       foregroundColor: AppColors.darkBlue,

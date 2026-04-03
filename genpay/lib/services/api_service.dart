@@ -177,6 +177,8 @@ class ApiService {
     String message, {
     bool userConfirmation = false,
     String? upiPin,
+    String paymentMode = 'online',
+    String? paymentOtpToken,
   }) async {
     final response = await http.post(
       _uri('/api/agent/query'),
@@ -186,9 +188,52 @@ class ApiService {
         'message': message,
         'user_confirmation': userConfirmation,
         if (upiPin != null) 'upi_pin': upiPin,
+        'payment_mode': paymentMode,
+        if (paymentOtpToken != null) 'payment_otp_token': paymentOtpToken,
       }),
     );
     return Map<String, dynamic>.from(await _handleResponse(response) as Map);
+  }
+
+  static Future<Map<String, dynamic>> requestOfflinePaymentOtp(String phone) async {
+    final response = await http.post(
+      _uri('/api/transactions/offline/request-otp'),
+      headers: await _headers(),
+      body: jsonEncode({'phone': phone}),
+    );
+    return Map<String, dynamic>.from(await _handleResponse(response) as Map);
+  }
+
+  static Future<Map<String, dynamic>> verifyOfflinePaymentOtp(String phone, String otp) async {
+    final response = await http.post(
+      _uri('/api/transactions/offline/verify-otp'),
+      headers: await _headers(),
+      body: jsonEncode({'phone': phone, 'otp': otp}),
+    );
+    return Map<String, dynamic>.from(await _handleResponse(response) as Map);
+  }
+
+  static Future<String> transcribePromptAudio(String filePath, {String language = 'en'}) async {
+    final request = http.MultipartRequest('POST', _uri('/api/agent/transcribe'));
+    final bearer = await AuthService.getToken();
+    if (bearer != null && bearer.isNotEmpty) {
+      request.headers['Authorization'] = 'Bearer $bearer';
+    }
+    request.fields['language'] = language;
+    request.files.add(await http.MultipartFile.fromPath('audio', filePath));
+
+    final streamed = await request.send();
+    final response = await http.Response.fromStream(streamed);
+    final decoded = await _handleResponse(response);
+    if (decoded is! Map<String, dynamic>) {
+      throw Exception('Invalid transcription response');
+    }
+
+    final text = (decoded['text'] ?? '').toString().trim();
+    if (text.isEmpty) {
+      throw Exception('No speech detected');
+    }
+    return text;
   }
 
   static Future<List<dynamic>> searchFlights({

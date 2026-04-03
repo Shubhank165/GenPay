@@ -5,7 +5,11 @@ from ..memory import memory_store
 
 
 def _match_directory_recipients(recipient_hint: str, directory: list[dict]) -> list[str]:
-    hint = recipient_hint.lower().strip()
+    def _normalize(value: str) -> str:
+        cleaned = "".join(ch.lower() if ch.isalnum() or ch.isspace() else " " for ch in value)
+        return " ".join(cleaned.split())
+
+    hint = _normalize(recipient_hint)
     if not hint:
         return []
 
@@ -18,13 +22,13 @@ def _match_directory_recipients(recipient_hint: str, directory: list[dict]) -> l
         if not display:
             continue
 
-        if name and hint in name.lower():
+        if name and hint in _normalize(name):
             matches.append(display)
             continue
-        if phone and hint == phone:
+        if phone and hint == _normalize(phone):
             matches.append(display)
             continue
-        if upi_id and hint in upi_id:
+        if upi_id and hint in _normalize(upi_id):
             matches.append(display)
 
     # Preserve order while deduplicating.
